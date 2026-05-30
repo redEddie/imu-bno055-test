@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BNO055 IMU Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>BNO055 IMU Dashboard</h1>
+          <p id="connection">Connecting...</p>
+        </div>
+        <div class="rate-control">
+          <label for="rate">Rate <span id="rate-value">50</span> Hz</label>
+          <input id="rate" type="range" min="10" max="100" step="5" value="50" />
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="viewer">
+          <canvas id="orientation"></canvas>
+        </div>
+
+        <aside class="side">
+          <section class="panel">
+            <h2>Values</h2>
+            <div class="checks">
+              <label><input type="checkbox" data-field="euler" checked /> Euler</label>
+              <label><input type="checkbox" data-field="quaternion" checked /> Quaternion</label>
+              <label><input type="checkbox" data-field="gravity" checked /> Gravity</label>
+              <label><input type="checkbox" data-field="linear" /> Linear acceleration</label>
+              <label><input type="checkbox" data-field="accel" /> Raw accel</label>
+              <label><input type="checkbox" data-field="gyro" /> Raw gyro</label>
+              <label><input type="checkbox" data-field="magnetometer" /> Magnetometer</label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Health</h2>
+            <div id="health" class="health"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="panel data-panel">
+        <h2>Selected Data</h2>
+        <div id="values" class="values"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

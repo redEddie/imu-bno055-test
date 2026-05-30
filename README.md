@@ -64,3 +64,34 @@ Run without sleeping between reads:
 ```bash
 sudo .venv/bin/python read_bno055.py --address 0x29 --fast --max-rate
 ```
+
+## Experimental web dashboard
+
+This is a prototype for the dashboard idea. On a Raspberry Pi Zero 2 W, the
+browser and Three.js view can be heavy, so prefer the terminal dashboard for
+quick and reliable IMU debugging.
+
+Start the browser dashboard:
+
+```bash
+sudo .venv/bin/python web_dashboard.py --address 0x29 --host 0.0.0.0 --port 1190
+```
+
+Open this machine's browser at:
+
+```text
+http://127.0.0.1:1190
+```
+
+Or open it from another machine on the same network with the Raspberry Pi IP:
+
+```text
+http://<raspberry-pi-ip>:1190
+```
+
+The web dashboard includes:
+
+- Three.js 3D orientation view driven by the BNO055 quaternion
+- Euler/quaternion/gravity/raw value checkboxes
+- 10-100 Hz stream rate slider
+- Quaternion norm, gravity magnitude, calibration, and observed rate health checks
