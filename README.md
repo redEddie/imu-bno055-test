@@ -2,6 +2,11 @@
 
 This directory is a small Raspberry Pi Zero 2 W test setup for a GY-BNO055/BNO055 IMU.
 
+> **자세 추정 알고리즘 직접 구현 실습은 [`README_filters.md`](README_filters.md) 참고.**
+> BNO055 를 AMG(raw) 모드로 두고 경사계 → 자이로 적분 → 상보 필터 → BNO055 정답(NDOF)
+> 비교를 4단계로 직접 구현했습니다. `smbus2` 만 쓰고 adafruit/numpy/matplotlib 불필요
+> (CLI 전용). 실측상 내 상보필터가 내장 퓨전을 **0.11° 오차**로 따라갑니다.
+
 ## Setup
 
 The virtual environment has already been created with `uv`, and the Adafruit BNO055 library was cloned into:
