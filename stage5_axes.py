@@ -141,7 +141,7 @@ def main():
                     ax, ay, az = s["accel"]
                     gx, gy, gz = s["gyro"]
                     mx, my, mz = s["mag"]
-                    b_head, b_roll, b_pitch = s["euler"]   # 원본순서(heading,roll,pitch)
+                    n_yaw, n_roll, n_pitch = s["euler_std"]   # 표준 ZYX (quat 변환)
                     now = time.perf_counter()
                     dt = now - t_prev
                     t_prev = now
@@ -151,9 +151,7 @@ def main():
                     c_roll, c_pitch = comp.update(ax, ay, az, gx, gy, dt)
                     c_yaw = yaw_f.update(mx, my, gz, dt)
                     a_yaw = cal.mag_yaw(geometry.mag_heading(mx, my))
-                    # euler_std 와 동일 변환: 축 스왑(roll<->pitch) + yaw ±180
-                    n_roll, n_pitch = b_pitch, b_roll
-                    n_yaw = wrap180(b_head)
+                    # n_yaw/n_roll/n_pitch 는 위 burst 의 euler_std(표준 ZYX) 사용
                     calstat = imu.calibration_status()
 
                     # ---- 선택 축의 (기준, COMP, 정답) 고르기 ----

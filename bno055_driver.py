@@ -236,30 +236,44 @@ class BNO055:
         ACCEL/MAG/GYRO/EULER 를 '한 번의 I2C 트랜잭션'으로 읽어 같은 순간의
         값으로 반환한다(burst read).
 
-        반환: dict {accel, mag, gyro, euler}  (각 3-튜플, 물리단위)
+        반환: dict {accel, mag, gyro, euler_raw, quat, euler_std}
+          - accel/mag/gyro : 3-튜플(물리단위)
+          - euler_raw      : BNO055 레지스터 원본 (heading, roll, pitch) — 참고용
+          - quat           : (w,x,y,z)
+          - euler_std      : 표준 ZYX (yaw, roll, pitch) — quat 에서 변환(권장)
 
         왜 burst 인가
         -------------
-        - 개별 accel()/gyro()/mag()/euler() 를 따로 호출하면 I2C 트랜잭션이 4번이라
-          (1) 클럭 스트레칭 실패 기회가 4배, (2) 네 값이 서로 다른 순간이 되어
-          빠르게 움직일 때 센서퓨전 입력의 시간 정합이 깨진다.
-        - BNO055 데이터 레지스터는 0x08(ACCEL)~0x1F(EULER끝) 가 연속이므로
-          24바이트를 한 방에 읽으면 트랜잭션 1회 + 동일 시각 보장.
+        - 개별 accel()/gyro()/mag()/euler()/quaternion() 를 따로 호출하면 I2C
+          트랜잭션이 여러 번이라 (1) 실패 기회가 배가, (2) 값들이 서로 다른
+          순간이 되어 빠르게 움직일 때 시간 정합이 깨진다.
+        - 데이터 레지스터가 0x08(ACCEL)~0x27(QUAT끝) 연속이므로 32바이트를 한
+          방에 읽으면 트랜잭션 1회 + 동일 시각 보장.
 
-        euler 는 원본 순서 (heading, roll, pitch). 표준 규약이 필요하면
-        euler_std()/euler_from_quat() 를 쓰거나, 여기 결과를 직접 스왑한다.
+        주의: euler_raw 의 규약은 표준 ZYX 와 다르다(heading=180-yaw, roll<->pitch).
+        표준이 필요하면 euler_std 를 써라(quat 에서 변환, 검증된 정확 경로).
         """
-        blk = self._read_block(ACCEL_DATA_ADDR, 24)
+        blk = self._read_block(ACCEL_DATA_ADDR, 32)
 
         def vec(off, scale):
             return tuple(_to_signed16(blk[off + 2 * i], blk[off + 2 * i + 1]) / scale
                          for i in range(3))
 
+        quat = (
+            _to_signed16(blk[24], blk[25]) / QUAT_SCALE,   # w  (0x20)
+            _to_signed16(blk[26], blk[27]) / QUAT_SCALE,   # x
+            _to_signed16(blk[28], blk[29]) / QUAT_SCALE,   # y
+            _to_signed16(blk[30], blk[31]) / QUAT_SCALE,   # z
+        )
+        roll, pitch, yaw = geometry.quat_to_euler(quat)
+
         return {
-            "accel": vec(0, ACCEL_SCALE),    # 0x08
-            "mag":   vec(6, MAG_SCALE),      # 0x0E
-            "gyro":  vec(12, GYRO_SCALE),    # 0x14
-            "euler": vec(18, EULER_SCALE),   # 0x1A (heading, roll, pitch)
+            "accel":     vec(0, ACCEL_SCALE),    # 0x08
+            "mag":       vec(6, MAG_SCALE),      # 0x0E
+            "gyro":      vec(12, GYRO_SCALE),    # 0x14
+            "euler_raw": vec(18, EULER_SCALE),   # 0x1A (heading, roll, pitch) 원본
+            "quat":      quat,                   # 0x20 (w,x,y,z)
+            "euler_std": (yaw, roll, pitch),     # 표준 ZYX (quat 에서 변환)
         }
 
     def accel(self):
@@ -301,33 +315,37 @@ class BNO055:
 
     def euler_std(self):
         """
-        BNO055 euler 를 '표준 항공 규약'으로 변환해 (yaw, roll, pitch) 로 반환.
+        '표준 항공 ZYX 규약'의 (yaw, roll, pitch) 도(degree), 모두 ±180/±90.
+        쿼터니언을 읽어 geometry.quat_to_euler 로 변환한다 = euler_from_quat 와 동일.
 
-        두 가지 변환:
-        1) 축 스왑: BNO055 의 (roll, pitch) 는 우리의 (pitch, roll) 에 해당하므로
-           맞바꾼다 -> accel_tilt / 상보필터 (roll, pitch) 와 직접 비교 가능.
-        2) yaw 범위: BNO055 heading 은 0~360° 로 나온다. 우리 코드는 전부
-           ±180° (wrap180) 규약이므로 -180~+180 으로 접어 통일한다.
-           (이걸 안 하면 yaw 가 360°->0° 를 넘을 때 미분/비교에 거대한 점프가 생김)
+        왜 레지스터(euler())가 아니라 쿼터니언인가
+        -----------------------------------------
+        실측·합성 이중검증(2000 표본 0불일치)으로, BNO055 의 euler '레지스터'와
+        표준 ZYX 의 관계는 다음과 같음이 확정됐다:
+            BNO_pitch   =  표준 roll       (오차 0.31°)
+            BNO_roll    = -표준 pitch      (오차 0.09°)
+            BNO_heading =  180 - 표준 yaw   (오차 3.8°)   <-- 핵심
+        즉 레지스터 heading 은 표준 yaw 와 'wrap 만으로는' 못 맞추고 180-yaw 관계다.
+        예전 euler_std 는 roll/pitch 스왑만 하고 yaw 를 wrap180(heading) 으로 둬서
+        yaw 가 표준과 어긋났다(그래서 stage5/6 yaw 비교가 이상했음).
 
-        참고: 더 견고한 경로는 euler_from_quat() 다. BNO055 의 euler 레지스터
-        대신 쿼터니언을 읽어 geometry 에서 오일러로 변환하므로, '내부=쿼터니언'
-        원칙을 그대로 따른다.
-        """
-        yaw, b_roll, b_pitch = self.euler()
-        std_roll = b_pitch       # BNO pitch(±180) == 표준 roll(atan2(ay,az))
-        std_pitch = b_roll       # BNO roll(±90)   == 표준 pitch(±90)
-        std_yaw = geometry.wrap180(yaw)           # 0~360 -> -180~+180
-        return std_yaw, std_roll, std_pitch
-
-    def euler_from_quat(self):
-        """
-        BNO055 쿼터니언을 읽어 geometry.quat_to_euler 로 (yaw, roll, pitch) 반환.
-        '내부=쿼터니언 / 출력=오일러' 의 표준 경로. euler_std 와 같은 (yaw,roll,
-        pitch) 순서/±180 규약으로 맞춰 돌려준다.
+        해결: BNO055 가 같은 자세로 주는 '쿼터니언'을 표준 ZYX 로 변환하면 위
+        규약 차이가 한 번에 해소된다(quat_to_euler 는 내적 1.0 으로 정확성 검증).
+        이것이 '내부=쿼터니언 / 출력=오일러' 원칙이다.
         """
         roll, pitch, yaw = geometry.quat_to_euler(self.quaternion())
         return yaw, roll, pitch
+
+    # 하위호환 별칭 (둘은 이제 동일하다)
+    euler_from_quat = euler_std
+
+    def euler_register_raw(self):
+        """
+        참고용: BNO055 euler '레지스터' 를 원본 순서(heading, roll, pitch)로.
+        표준 ZYX 와 규약이 다르다(heading=180-yaw, roll<->pitch 스왑). 칩이 주는
+        값을 '있는 그대로' 보고 싶을 때만 쓴다. 표준 비교에는 euler_std() 를 써라.
+        """
+        return self.euler()
 
     def projected_gravity(self):
         """몸체 좌표계의 중력 단위벡터 (로봇 RL 정책용). geometry 에 위임."""

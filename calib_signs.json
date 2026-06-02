@@ -1,8 +1,8 @@
 {
   "ACC_SIGN_ROLL": 1,
-  "ACC_SIGN_PITCH": -1,
-  "MAG_SIGN_YAW": 1,
+  "ACC_SIGN_PITCH": 1,
+  "MAG_SIGN_YAW": -1,
   "GYRO_SIGN_ROLL": 1,
-  "GYRO_SIGN_PITCH": -1,
-  "GYRO_SIGN_YAW": -1
+  "GYRO_SIGN_PITCH": 1,
+  "GYRO_SIGN_YAW": 1
 }
