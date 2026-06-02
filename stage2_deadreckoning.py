@@ -20,6 +20,7 @@
 import time
 
 from bno055_driver import BNO055, MODE_AMG
+import calibration
 from filters import GyroIntegrator
 
 
@@ -28,7 +29,7 @@ def main():
         imu.set_mode(MODE_AMG)
         time.sleep(0.05)
 
-        integ = GyroIntegrator()        # 0,0 에서 시작
+        integ = GyroIntegrator(calib=calibration.load())   # 0,0 에서 시작
         print("[2단계] 자이로 적분 (AMG raw 모드).  센서를 가만히 두고 드리프트를 보세요.")
         print("        Ctrl-C 로 종료\n")
         print(f"{'gx':>7} {'gy':>7} | {'roll(°)':>9} {'pitch(°)':>9} | {'경과(s)':>7}")

@@ -35,11 +35,10 @@ import time
 import select
 
 from bno055_driver import BNO055, MODE_NDOF
-import filters
-from filters import (
-    accel_tilt, mag_heading, wrap180,
-    ComplementaryFilter, YawComplementaryFilter,
-)
+import geometry
+import calibration
+from geometry import wrap180
+from filters import ComplementaryFilter, YawComplementaryFilter
 
 PLOT_WIDTH = 61          # 막대 칸 수 (홀수 -> 가운데가 0°)
 ANGLE_RANGE = 180.0      # 모든 축 공통: 양 끝 ±180° (clip 없음)
@@ -98,7 +97,7 @@ def main():
     alpha = float(sys.argv[1]) if len(sys.argv) > 1 else 0.98
     axis = sys.argv[2].lower() if len(sys.argv) > 2 and sys.argv[2].lower() in AXES else "x"
 
-    filters.load_calibration()      # 부호 보정 적용 (없으면 +1 기본 + 안내)
+    cal = calibration.load()        # 부호 보정 적용 (없으면 +1 기본 + 안내)
 
     with BNO055() as imu:
         imu.set_mode(MODE_NDOF)
@@ -107,9 +106,9 @@ def main():
 
         ax, ay, az = imu.accel_settled()
         mx, my, mz = imu.mag()
-        comp = ComplementaryFilter(alpha=alpha)
+        comp = ComplementaryFilter(alpha=alpha, calib=cal)
         comp.seed(ax, ay, az)
-        yaw_f = YawComplementaryFilter(alpha=alpha)
+        yaw_f = YawComplementaryFilter(alpha=alpha, calib=cal)
         yaw_f.seed(mx, my)
 
         print("  막대 범위: -180° (왼쪽) ~ +180° (오른쪽),  가운데 '|' = 0°")
@@ -137,22 +136,25 @@ def main():
                             alpha = max(0.50, round(alpha - 0.005, 3))
                             comp.alpha = yaw_f.alpha = alpha
 
-                    # ---- 센서 읽기 + dt ----
-                    ax, ay, az = imu.accel()
-                    gx, gy, gz = imu.gyro()
-                    mx, my, mz = imu.mag()
+                    # ---- 센서 읽기 (burst: 1회 I2C 트랜잭션, 모두 같은 순간) + dt ----
+                    s = imu.read_all()
+                    ax, ay, az = s["accel"]
+                    gx, gy, gz = s["gyro"]
+                    mx, my, mz = s["mag"]
+                    b_head, b_roll, b_pitch = s["euler"]   # 원본순서(heading,roll,pitch)
                     now = time.perf_counter()
                     dt = now - t_prev
                     t_prev = now
 
                     # ---- 세 축 필터 동시 갱신 (전환 시 재수렴 없음) ----
-                    a_roll, a_pitch = accel_tilt(ax, ay, az)
+                    a_roll, a_pitch = cal.acc_tilt(*geometry.accel_tilt(ax, ay, az))
                     c_roll, c_pitch = comp.update(ax, ay, az, gx, gy, dt)
                     c_yaw = yaw_f.update(mx, my, gz, dt)
-                    a_yaw = mag_heading(mx, my)
-                    n_yaw, n_roll, n_pitch = imu.euler_std()
-                    n_yaw = wrap180(n_yaw)
-                    cal = imu.calibration_status()
+                    a_yaw = cal.mag_yaw(geometry.mag_heading(mx, my))
+                    # euler_std 와 동일 변환: 축 스왑(roll<->pitch) + yaw ±180
+                    n_roll, n_pitch = b_pitch, b_roll
+                    n_yaw = wrap180(b_head)
+                    calstat = imu.calibration_status()
 
                     # ---- 선택 축의 (기준, COMP, 정답) 고르기 ----
                     if axis == "x":
@@ -167,7 +169,7 @@ def main():
                     rlab = REF_LABEL[axis]
                     print(f"[{axis}|a{alpha:.3f}] [{line}]  "
                           f"{rlab}{ref:7.1f} COMP{cmp:7.1f} NDOF{ndof:7.1f}"
-                          f"  Δ{err:+5.1f}  cal{cal[0]}{cal[1]}{cal[2]}{cal[3]}",
+                          f"  Δ{err:+5.1f}  cal{calstat[0]}{calstat[1]}{calstat[2]}{calstat[3]}",
                           end="\r", flush=True)
                     time.sleep(0.02)        # ~50 Hz
         except KeyboardInterrupt:

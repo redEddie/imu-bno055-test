@@ -33,26 +33,18 @@
 import sys
 import time
 
-# 보정 중에는 내 부호를 모두 +1 로 두고 'NDOF 대비 부호' 를 순수하게 측정해야
-# 하므로, 모듈 전역 부호를 건드리지 않도록 raw 함수를 직접 쓴다.
-import math
-
+import geometry
+from geometry import wrap180
+from calibration import Calibration
 from bno055_driver import BNO055, MODE_NDOF
-from filters import wrap180, save_calibration
 
 DURATION_DEFAULT = 8.0
 MIN_MOTION_DEG = 40.0     # 한 축에서 이 정도(누적 |변화|)는 움직여야 신뢰
 
-
-def raw_accel_angles(ax, ay, az):
-    """부호 +1 기준 accel roll/pitch (filters.ACC_SIGN_* 영향 안 받게 직접 계산)."""
-    roll  = math.degrees(math.atan2(ay, az))
-    pitch = math.degrees(math.atan2(-ax, math.sqrt(ay * ay + az * az)))
-    return roll, pitch
-
-
-def raw_mag_yaw(mx, my):
-    return math.degrees(math.atan2(my, mx))
+# 보정은 'NDOF 대비 부호' 를 순수하게 재야 하므로, geometry 의 부호 미보정
+# 순수 기하 함수를 그대로 쓴다(부호가 안 섞임).
+raw_accel_angles = geometry.accel_tilt
+raw_mag_yaw = lambda mx, my: geometry.mag_heading(mx, my)
 
 
 def main():
@@ -149,7 +141,7 @@ def main():
             print(f" {k:16s} {c:+11.1f}    {'+1' if s>0 else '-1'}"
                   f"     ({axis} {motion[axis]:.0f}°){flag}")
 
-        save_calibration(signs)
+        Calibration(signs).save()
         print(f"\n calib_signs.json 저장 완료.")
         if low_conf:
             uniq = ", ".join(sorted(set(low_conf)))

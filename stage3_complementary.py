@@ -28,8 +28,9 @@ import sys
 import time
 
 from bno055_driver import BNO055, MODE_AMG
-import filters
-from filters import accel_tilt, GyroIntegrator, ComplementaryFilter
+import geometry
+import calibration
+from filters import GyroIntegrator, ComplementaryFilter
 
 
 def main():
@@ -37,7 +38,7 @@ def main():
     if not (0.0 < alpha < 1.0):
         raise SystemExit("alpha 는 0~1 사이여야 합니다 (예: 0.98)")
 
-    filters.load_calibration()      # 부호 보정 적용 (없으면 +1 기본 + 안내)
+    cal = calibration.load()        # 부호 보정 적용 (없으면 +1 기본 + 안내)
 
     with BNO055() as imu:
         imu.set_mode(MODE_AMG)
@@ -45,9 +46,9 @@ def main():
 
         # 시작값을 가속도 각도로 맞춰 수렴을 빠르게 (첫 읽기 0,0,0 구간은 건너뜀)
         ax, ay, az = imu.accel_settled()
-        comp = ComplementaryFilter(alpha=alpha)
+        comp = ComplementaryFilter(alpha=alpha, calib=cal)
         comp.seed(ax, ay, az)
-        integ = GyroIntegrator(comp.roll, comp.pitch)
+        integ = GyroIntegrator(comp.roll, comp.pitch, calib=cal)
 
         print(f"[3단계] 상보 필터  alpha={alpha}  (AMG raw 모드).  Ctrl-C 로 종료\n")
         print(f"{'':>6} | {'ACC':>17} | {'GYRO':>17} | {'COMP':>17}")
@@ -65,7 +66,7 @@ def main():
                 ax, ay, az = imu.accel()
                 gx, gy, gz = imu.gyro()
 
-                a_roll, a_pitch = accel_tilt(ax, ay, az)
+                a_roll, a_pitch = cal.acc_tilt(*geometry.accel_tilt(ax, ay, az))
                 g_roll, g_pitch = integ.update(gx, gy, dt)
                 c_roll, c_pitch = comp.update(ax, ay, az, gx, gy, dt)
 

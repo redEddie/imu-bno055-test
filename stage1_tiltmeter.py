@@ -21,10 +21,12 @@ roll/pitch 를 계산한다.
 import time
 
 from bno055_driver import BNO055, MODE_AMG
-from filters import accel_tilt
+import geometry
+import calibration
 
 
 def main():
+    cal = calibration.load()        # 축 부호 정렬 (없으면 +1 기본)
     with BNO055() as imu:
         imu.set_mode(MODE_AMG)          # 퓨전 OFF, 순수 raw
         time.sleep(0.05)
@@ -34,7 +36,7 @@ def main():
         try:
             while True:
                 ax, ay, az = imu.accel()
-                roll, pitch = accel_tilt(ax, ay, az)
+                roll, pitch = cal.acc_tilt(*geometry.accel_tilt(ax, ay, az))
                 print(f"{ax:7.2f} {ay:7.2f} {az:7.2f} | "
                       f"{roll:9.2f} {pitch:9.2f}", end="\r", flush=True)
                 time.sleep(0.02)        # ~50 Hz

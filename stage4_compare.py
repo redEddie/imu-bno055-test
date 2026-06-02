@@ -36,8 +36,9 @@ import sys
 import time
 
 from bno055_driver import BNO055, MODE_NDOF
-import filters
-from filters import accel_tilt, ComplementaryFilter
+import geometry
+import calibration
+from filters import ComplementaryFilter
 
 PLOT_WIDTH = 61          # 막대 칸 수 (홀수면 가운데가 0°)
 ANGLE_RANGE = 90.0       # 화면 양 끝이 ±90°
@@ -61,7 +62,7 @@ def _bar(values_with_marks):
 def main():
     alpha = float(sys.argv[1]) if len(sys.argv) > 1 else 0.98
 
-    filters.load_calibration()      # 부호 보정 적용 (없으면 +1 기본 + 안내)
+    cal = calibration.load()        # 부호 보정 적용 (없으면 +1 기본 + 안내)
 
     with BNO055() as imu:
         imu.set_mode(MODE_NDOF)
@@ -69,7 +70,7 @@ def main():
         time.sleep(2.0)                         # 퓨전 수렴 + 데이터 안정화
 
         ax, ay, az = imu.accel_settled()
-        comp = ComplementaryFilter(alpha=alpha)
+        comp = ComplementaryFilter(alpha=alpha, calib=cal)
         comp.seed(ax, ay, az)                   # 정답 근처에서 시작
 
         print(f"[4단계] 상보필터 vs BNO055 정답지   alpha={alpha}")
@@ -87,17 +88,17 @@ def main():
                 dt = now - t_prev
                 t_prev = now
 
-                a_roll, a_pitch = accel_tilt(ax, ay, az)
+                a_roll, a_pitch = cal.acc_tilt(*geometry.accel_tilt(ax, ay, az))
                 c_roll, c_pitch = comp.update(ax, ay, az, gx, gy, dt)
                 _, n_roll, n_pitch = imu.euler_std()   # 표준 규약으로 정답 읽기
-                cal = imu.calibration_status()
+                calstat = imu.calibration_status()
 
                 # roll(±180°)이 자세 변화를 더 넓게 보여줘 비교가 잘 보인다.
                 line = _bar([(a_roll, "."), (c_roll, "*"), (n_roll, "#")])
                 err = c_roll - n_roll
                 print(f"[{line}]  "
                       f"ACC{a_roll:6.1f} COMP{c_roll:6.1f} NDOF{n_roll:6.1f}"
-                      f"  Δ{err:+5.1f}  cal{cal[0]}{cal[1]}{cal[2]}{cal[3]}",
+                      f"  Δ{err:+5.1f}  cal{calstat[0]}{calstat[1]}{calstat[2]}{calstat[3]}",
                       end="\r", flush=True)
                 time.sleep(0.02)                # ~50 Hz
         except KeyboardInterrupt:
