@@ -81,6 +81,51 @@ def quat_rotate_inverse(q, v):
             a[2] - b[2] + c[2])
 
 
+def quat_rotate(q, v):
+    """
+    쿼터니언 q (w,x,y,z) 의 '정회전' 을 벡터 v 에 적용.
+    = 몸체(body) 좌표 벡터 v 를 월드 좌표로 가져온다.  (quat_rotate_inverse 의 역)
+    """
+    w, x, y, z = q
+    vx, vy, vz = v
+    a = (vx * (2.0 * w * w - 1.0),
+         vy * (2.0 * w * w - 1.0),
+         vz * (2.0 * w * w - 1.0))
+    cx = y * vz - z * vy
+    cy = z * vx - x * vz
+    cz = x * vy - y * vx
+    b = (cx * 2.0 * w, cy * 2.0 * w, cz * 2.0 * w)
+    d = (x * vx + y * vy + z * vz) * 2.0
+    c = (x * d, y * d, z * d)
+    # 정회전은 +b (역회전은 -b)
+    return (a[0] + b[0] + c[0],
+            a[1] + b[1] + c[1],
+            a[2] + b[2] + c[2])
+
+
+def quat_tilt_heading(q, mx, my, mz):
+    """
+    쿼터니언 기반 틸트보상 헤딩(yaw).  roll/pitch 를 손으로 안 쓴다.
+
+    원리
+    ----
+    센서가 읽은 자기장 벡터(body 좌표)를, 쿼터니언으로 '월드 좌표'로 회전시키면
+    기울기가 자동으로 제거된다. 그 월드 자기장의 수평면(x,y) 성분으로 헤딩을
+    구한다:
+        m_world = R(q) · m_body
+        heading = atan2(m_world_y, m_world_x)
+
+    accel 로 roll/pitch 를 따로 구해 mag 를 수동으로 펴는 고전 틸트보상과 달리,
+    회전 전체를 쿼터니언이 처리하므로 'accel-mag 축이 1:1 로 안 맞는' 문제에
+    영향받지 않는다(둘을 수동 정렬할 필요가 없음).
+
+    주의: q 는 BNO055 NDOF 쿼터니언(이미 9축 융합). mag 자체의 하드/소프트
+    아이언 왜곡이 남아 있으면 절대 정확도엔 한계가 있다.
+    """
+    wx, wy, wz = quat_rotate(q, (mx, my, mz))
+    return math.degrees(math.atan2(wy, wx))
+
+
 def projected_gravity(q):
     """
     몸체 좌표계에서 본 중력 단위벡터.  로봇 RL 정책이 자세 입력으로 쓰는 바로
@@ -138,6 +183,30 @@ def accel_tilt(ax, ay, az):
     roll = math.degrees(math.atan2(ay, az))
     pitch = math.degrees(math.atan2(-ax, math.sqrt(ay * ay + az * az)))
     return roll, pitch
+
+
+def mag_to_accel_frame(mx, my, mz):
+    """
+    BNO055 자력계 raw 축을 가속도(중력) 축과 같은 좌표계로 재매핑한다.
+
+    실측 배경 (accel-mag 축 교차상관)
+    --------------------------------
+    센서를 여러 축으로 크게 기울인 336표본에서 accel 3축과 mag 3축의 상관을
+    구하면 대각선이 강한 음수였다:
+        acc_x↔mag_x -0.93,  acc_y↔mag_y -0.93,  acc_z↔mag_z -0.82
+    즉 mag 는 accel 과 '같은 축 순서'지만 '세 축 모두 부호 반대'다.
+    따라서 가속도 좌표계로 맞추려면 세 축 부호만 뒤집으면 된다:
+
+        x' = -mx,   y' = -my,   z' = -mz
+
+    (단순 헤딩 atan2(my,mx) 에선 x,y 부호가 상쇄돼 안 드러나지만, 틸트보상은
+     mz 부호에 민감해 이 매핑이 필요하다.)
+
+    주의: 잔여 편차와 절대 오프셋은 mag 전용 하드/소프트아이언 보정을 직접 안
+    한 탓(BNO055 NDOF 는 칩이 그걸 해서 더 정확). 정밀 heading 은 NDOF 를 쓰고,
+    이 함수는 '틸트보상 원리 학습/검증' 용이다.
+    """
+    return (-mx, -my, -mz)
 
 
 def mag_heading(mx, my):
