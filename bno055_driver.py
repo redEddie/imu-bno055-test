@@ -63,6 +63,9 @@ LIA_DATA_ADDR   = 0x28          # linear accel (6 bytes)
 GRV_DATA_ADDR   = 0x2E          # gravity vector (6 bytes)
 
 CALIB_STAT_ADDR = 0x35          # sys/gyro/accel/mag calibration status
+# 보정 offset/radius 레지스터 (0x55~0x6A 연속 22바이트). CONFIG 모드에서만 R/W.
+OFFSET_BASE_ADDR = 0x55         # accel(6)+mag(6)+gyro(6)+acc_radius(2)+mag_radius(2)
+OFFSET_LEN       = 22
 ST_RESULT_ADDR  = 0x36
 SYS_STATUS_ADDR = 0x39
 SYS_ERR_ADDR    = 0x3A
@@ -367,6 +370,39 @@ class BNO055:
 
     def system_status(self):
         return self._read8(SYS_STATUS_ADDR), self._read8(SYS_ERR_ADDR)
+
+    # ----------------------------------------------------- 보정 offset 저장/복원
+    def get_calibration_offsets(self):
+        """
+        보정 offset/radius 22바이트를 읽어 리스트로 반환.
+        CONFIG 모드에서만 유효하므로 잠시 CONFIG 로 전환했다 원복한다.
+        반환값을 json 으로 저장해 두면 다음 부팅 때 set_calibration_offsets 로
+        복원할 수 있다(8자 보정 반복 불필요).
+        """
+        prev = self._mode
+        self.set_mode(MODE_CONFIG)
+        try:
+            data = self._read_block(OFFSET_BASE_ADDR, OFFSET_LEN)
+        finally:
+            if prev is not None and prev != MODE_CONFIG:
+                self.set_mode(prev)
+        return list(data)
+
+    def set_calibration_offsets(self, data):
+        """
+        저장해 둔 22바이트 offset/radius 를 레지스터에 써넣는다(CONFIG 모드).
+        복원 후엔 mag 만 살짝 흔들어도 cal 이 빠르게 3 으로 회복된다.
+        """
+        if len(data) != OFFSET_LEN:
+            raise ValueError(f"offset 데이터는 {OFFSET_LEN}바이트여야 함 (받음 {len(data)})")
+        prev = self._mode
+        self.set_mode(MODE_CONFIG)
+        try:
+            for i, b in enumerate(data):
+                self._write8(OFFSET_BASE_ADDR + i, int(b) & 0xFF)
+        finally:
+            if prev is not None and prev != MODE_CONFIG:
+                self.set_mode(prev)
 
 
 if __name__ == "__main__":
